@@ -1154,11 +1154,11 @@ impl Library {
                     None
                 })
                 .ok_or_else(|| parser.fail_with_position("Missing type name", elem.position()))?;
-        let c_type = elem.attr("type").map(|s| s.into());
+        let mut c_type = elem.attr("type").map(|s| s.into());
         let array_length = elem.attr("length").and_then(|s| s.parse().ok());
 
         let inner = parser.elements(|parser, elem| match elem.name() {
-            "type" | "array" => self.read_type(parser, ns_id, elem).map(|r| r.0),
+            "type" | "array" => self.read_type(parser, ns_id, elem),
             _ => Err(parser.unexpected_element(elem)),
         })?;
 
@@ -1174,13 +1174,16 @@ impl Library {
             }
         } else {
             let tid = if type_name == "array" {
-                Type::c_array(
-                    self,
-                    inner[0],
-                    elem.attr("fixed-size").and_then(|n| n.parse().ok()),
-                )
+                let fixed_size = elem.attr("fixed-size").and_then(|n| n.parse().ok());
+                if let Some(ref inner_c_type) = inner[0].1 {
+                    if fixed_size.is_none() {
+                        c_type = Some(format!("{}*", inner_c_type));
+                    }
+                }
+                Type::c_array(self, inner[0].0, fixed_size)
             } else {
-                Type::container(self, type_name, inner)
+                let inner_ids = inner.iter().map(|r| r.0).collect();
+                Type::container(self, type_name, inner_ids)
                     .ok_or_else(|| parser.fail_with_position("Unknown container type", elem.position()))?
             };
             Ok((tid, c_type, array_length))
